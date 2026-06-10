@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+    <meta name="theme-color" content="#8fd9ff" />
+    <title>喵喵跳跳乐</title>
+  </head>
+  <body>
+    <div id="app">
+      <canvas id="gameCanvas" aria-label="喵喵跳跳乐游戏画布"></canvas>
+
+      <div class="hud" aria-hidden="true">
+        <button class="icon-button pause-control" id="pauseButton" type="button" title="暂停">
+          <span></span>
+          <span></span>
+        </button>
+        <div class="score-card">
+          <div class="score">
+            <span>分数</span>
+            <strong id="scoreValue">0</strong>
+          </div>
+          <div class="best">
+            <span>最高</span>
+            <strong id="bestValue">0</strong>
+          </div>
+        </div>
+      </div>
+
+      <div class="touch touch-left" aria-hidden="true">
+        <span>‹</span>
+      </div>
+      <div class="touch touch-right" aria-hidden="true">
+        <span>›</span>
+      </div>
+
+      <div class="modal-backdrop is-visible" id="modalBackdrop" aria-hidden="true"></div>
+
+      <section class="overlay intro-overlay is-visible" id="readyPanel" aria-labelledby="introTitle">
+        <h1 class="sr-only" id="introTitle">喵喵跳跳乐</h1>
+        <img class="intro-cat" src="https://meowgame.tos-cn-beijing.volces.com/assets/character-jump.png" alt="" aria-hidden="true" />
+        <p>点击屏幕两侧按钮控制猫咪，踩住平台一路向上，飞向宇宙，得到自由！</p>
+        <button class="primary-button" id="startButton" type="button">开始</button>
+      </section>
+
+      <section class="overlay game-over-overlay" id="gameOverPanel">
+        <div class="brand">喵喵跳跳乐</div>
+        <h1>本局结束</h1>
+        <p class="final-score-row">分数 <strong id="finalScore">0</strong></p>
+        <p class="final-region-row">到达区域 <strong id="finalRegion">篮球乐园</strong></p>
+        <p class="final-praise" id="finalPraise">小猫热身完成，下一跳就能摸到云朵！</p>
+        <button class="primary-button" id="restartButton" type="button">再来一次</button>
+      </section>
+
+      <section class="asset-error" id="assetError">
+        <h1>素材加载失败</h1>
+        <p>请检查对象存储中的游戏图片是否存在。</p>
+      </section>
+    </div>
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>
