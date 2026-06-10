@@ -55,8 +55,9 @@ const config = {
   fragilePlatformHardChance: 0.25,
   fragilePlatformExpertMeters: 100,
   fragilePlatformExpertChance: 0.3,
-  rocketSpawnEveryMeters: 25,
+  rocketSpawnEveryMeters: 20,
   rocketFirstSpawnMeters: 15,
+  rocketSceneTransitionBlockMeters: 15,
   rocketBoostMeters: 10,
   rocketBoostSpeed: 1200,
   rocketExitVelocity: -520,
@@ -117,6 +118,10 @@ function sceneForMeters(meters) {
   return scenes.find((scene) => meters >= scene.start && meters < scene.end) || scenes.at(-1);
 }
 
+function upcomingSceneForMeters(meters) {
+  return scenes.find((scene) => scene.start > meters);
+}
+
 function loadImage(src) {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -164,6 +169,14 @@ function choosePlatformType(y) {
 function getRocketBucket(y) {
   const meters = metersFromY(y);
   if (meters < config.rocketFirstSpawnMeters) return null;
+  const upcomingScene = upcomingSceneForMeters(meters);
+  if (
+    upcomingScene &&
+    meters >= upcomingScene.start - config.rocketSceneTransitionBlockMeters &&
+    meters < upcomingScene.start
+  ) {
+    return null;
+  }
   return Math.floor((meters - config.rocketFirstSpawnMeters) / config.rocketSpawnEveryMeters);
 }
 
@@ -181,9 +194,7 @@ function createPlatform(x, y, width = config.platformWidth, type = choosePlatfor
 }
 
 function createPlatformRow(y, margin = 16) {
-  if (Math.random() >= config.doublePlatformChance) {
-    return [createPlatform(randomBetween(margin, config.worldWidth - config.platformWidth - margin), y)];
-  }
+  if (Math.random() >= config.doublePlatformChance) return [createPlatform(randomBetween(margin, config.worldWidth - config.platformWidth - margin), y)];
   const maxLeftX = config.worldWidth - margin - config.platformWidth * 2 - config.doublePlatformMinGap;
   if (maxLeftX <= margin) return [createPlatform(randomBetween(margin, config.worldWidth - config.platformWidth - margin), y)];
   const leftX = randomBetween(margin, maxLeftX);
@@ -341,13 +352,8 @@ function update(dt) {
   if (player.y - game.cameraY > worldHeight + 120) endGame();
 }
 
-function toScreenX(x) {
-  return x * scale;
-}
-
-function toScreenY(y) {
-  return (y - game.cameraY) * scale;
-}
+function toScreenX(x) { return x * scale; }
+function toScreenY(y) { return (y - game.cameraY) * scale; }
 
 function drawCoverImage(img, x, y, width, height) {
   const imageRatio = img.width / img.height;
