@@ -54,24 +54,24 @@ const sceneTimeline = [
 
 const sceneResults = {
   basketball: {
-    name: '绡悆涔愬洯',
-    praise: '灏忕尗鐑韩瀹屾垚锛屽脊璺虫墜鎰熷凡缁忓湪绾匡紒',
+    name: '篮球乐园',
+    praise: '小猫热身完成，弹跳手感已经在线！',
   },
   candy: {
-    name: '绯栨灉鐗╄',
-    praise: '浣犲凡缁忚烦杩涚敎鐢滀簯灞傦紝涓嬩竴绔欎細鏇撮珮鏇撮棯浜紒',
+    name: '糖果物语',
+    praise: '你已经跳进甜甜云层，下一站会更高更闪亮！',
   },
   forest: {
-    name: '妫灄绉樺',
-    praise: '绌胯繃鏍戞ⅱ鐨勯閮藉湪缁欎綘榧撴帉锛岀户缁悜涓婂啿锛?,
+    name: '森林秘境',
+    praise: '穿过树梢的风都在给你鼓掌，继续向上冲！',
   },
   chongqing: {
-    name: '榄斿够閲嶅簡',
-    praise: '浣犺烦鍒颁簡灞卞煄澶╅檯绾匡紝鍠靛柕鐨勫脊璺冲姏澶反閫備簡锛?,
+    name: '魔幻重庆',
+    praise: '你跳到了山城天际线，喵喵的弹跳力太巴适了！',
   },
   space: {
-    name: '瀹囧畽鏄熸渤',
-    praise: '宸茬粡椋炲悜瀹囧畽鍟︼紝杩欏彧灏忕尗绠€鐩存槸鏄熼檯璺宠穬鍐犲啗锛?,
+    name: '宇宙星河',
+    praise: '已经飞向宇宙啦，这只小猫简直是星际跳跃冠军！',
   },
 };
 
@@ -379,7 +379,7 @@ function createBreakFragments(platform) {
       x: platform.x + pieceWidth * index,
       y: platform.y - 12,
       width: pieceWidth,
-    height: config.platformDrawHeight,
+      height: config.platformDrawHeight,
       sxRatio: index / pieces,
       swRatio: 1 / pieces,
       vx: (index - 1) * 78 + randomBetween(-18, 18),
