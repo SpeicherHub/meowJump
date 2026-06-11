@@ -77,7 +77,7 @@ const sceneResults = {
 
 const platformPreviewMeters = 10;
 const backgroundFadeLeadMeters = 5;
-const backgroundFadeDurationMs = 1000;
+const backgroundFadeDurationMs = 1500;
 
 const config = {
   worldWidth: 390,
@@ -122,7 +122,7 @@ const config = {
   springHighChanceMeters: 50,
   springLowChance: 0.05,
   springHighChance: 0.1,
-  springJumpMultiplier: 2,
+  springJumpMultiplier: 1.45,
   springWidth: 42,
   springHeight: 28,
   startPlatformYRatio: 0.78,
