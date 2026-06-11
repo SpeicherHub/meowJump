@@ -52,3 +52,10 @@ Local runtime assets live in `public/assets/`, while the deployed GitHub Pages b
 - `scenes/*-platform-fragile.png`
 
 The `*-source.png` files are the chroma-key generation sources kept for review and regeneration.
+
+## Gameplay Notes
+
+- The first 3 score meters only spawn normal platforms and no powerups.
+- Moving platforms have a 10% row spawn chance after the starting safe zone.
+- A moving platform row always contains one platform, so it will not conflict with double-platform rows.
+- Moving platforms use the same normal platform art. Any rocket or spring spawned on one stays attached because powerups are positioned from the platform's live coordinates.
