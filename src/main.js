@@ -92,6 +92,10 @@ const config = {
   platformGapMax: 132,
   doublePlatformChance: 0.1,
   doublePlatformMinGap: 36,
+  startingNormalOnlyMeters: 3,
+  movingPlatformChance: 0.1,
+  movingPlatformSpeedMin: 54,
+  movingPlatformSpeedMax: 82,
   playerWidth: 140,
   playerHeight: 151,
   footHitboxWidthRatio: 0.32,
@@ -209,6 +213,10 @@ function metersFromY(y) {
   return Math.max(0, Math.floor(Math.abs(y) / config.meterGridHeight));
 }
 
+function isInStartingNormalZone(y) {
+  return y > -config.startingNormalOnlyMeters * config.meterGridHeight;
+}
+
 function findSceneIndex(meters) {
   const index = sceneTimeline.findIndex((scene) => meters >= scene.start && meters < scene.end);
   return index === -1 ? sceneTimeline.length - 1 : index;
@@ -279,8 +287,14 @@ function getSceneAsset(sceneId, assetType) {
   return assets[sceneKey] || assets.basketballPlatform;
 }
 
-function choosePlatformType(y) {
+function canCarryPowerup(platform) {
+  return platform.type === 'normal' || platform.type === 'moving';
+}
+
+function choosePlatformType(y, allowMoving = true) {
   const meters = metersFromY(y);
+  if (isInStartingNormalZone(y)) return 'normal';
+  if (allowMoving && Math.random() < config.movingPlatformChance) return 'moving';
   if (meters < config.fragilePlatformStartMeters) return 'normal';
 
   const chance =
@@ -312,7 +326,9 @@ function getRocketBucket(y) {
 
 function createRocketForPlatform(platform) {
   const bucket = getRocketBucket(platform.y);
-  if (bucket === null || platform.type !== 'normal' || game.rocketBuckets.has(bucket)) return null;
+  if (isInStartingNormalZone(platform.y) || bucket === null || !canCarryPowerup(platform) || game.rocketBuckets.has(bucket)) {
+    return null;
+  }
 
   game.rocketBuckets.add(bucket);
   return {
@@ -325,7 +341,9 @@ function createRocketForPlatform(platform) {
 
 function createSpringForPlatform(platform) {
   const meters = metersFromY(platform.y);
-  if (meters < config.springStartMeters || platform.type !== 'normal' || platform.rocket) return null;
+  if (isInStartingNormalZone(platform.y) || meters < config.springStartMeters || !canCarryPowerup(platform) || platform.rocket) {
+    return null;
+  }
 
   const chance = meters >= config.springHighChanceMeters ? config.springHighChance : config.springLowChance;
   if (Math.random() >= chance) return null;
@@ -339,19 +357,32 @@ function createSpringForPlatform(platform) {
 
 function createPlatform(x, y, width = config.platformWidth, type = choosePlatformType(y)) {
   const platform = { x, y, width, height: config.platformHeight, type, rocket: null, spring: null };
+  if (type === 'moving') {
+    const margin = 16;
+    platform.movement = {
+      minX: margin,
+      maxX: config.worldWidth - width - margin,
+      vx: randomBetween(config.movingPlatformSpeedMin, config.movingPlatformSpeedMax) * (Math.random() < 0.5 ? -1 : 1),
+    };
+  }
   platform.rocket = createRocketForPlatform(platform);
   platform.spring = createSpringForPlatform(platform);
   return platform;
 }
 
 function createPlatformRow(y, margin = 16) {
+  const rowType = choosePlatformType(y);
+  if (rowType === 'moving') {
+    return [createPlatform(randomBetween(margin, config.worldWidth - config.platformWidth - margin), y, config.platformWidth, rowType)];
+  }
+
   if (Math.random() >= config.doublePlatformChance) {
-    return [createPlatform(randomBetween(margin, config.worldWidth - config.platformWidth - margin), y)];
+    return [createPlatform(randomBetween(margin, config.worldWidth - config.platformWidth - margin), y, config.platformWidth, rowType)];
   }
 
   const maxLeftX = config.worldWidth - margin - config.platformWidth * 2 - config.doublePlatformMinGap;
   if (maxLeftX <= margin) {
-    return [createPlatform(randomBetween(margin, config.worldWidth - config.platformWidth - margin), y)];
+    return [createPlatform(randomBetween(margin, config.worldWidth - config.platformWidth - margin), y, config.platformWidth, rowType)];
   }
 
   const leftX = randomBetween(margin, maxLeftX);
@@ -359,7 +390,10 @@ function createPlatformRow(y, margin = 16) {
     leftX + config.platformWidth + config.doublePlatformMinGap,
     config.worldWidth - config.platformWidth - margin,
   );
-  const platforms = [createPlatform(leftX, y), createPlatform(rightX, y)];
+  const platforms = [
+    createPlatform(leftX, y, config.platformWidth, rowType),
+    createPlatform(rightX, y, config.platformWidth, choosePlatformType(y, false)),
+  ];
   return Math.random() < 0.5 ? platforms : platforms.reverse();
 }
 
@@ -529,6 +563,21 @@ function updateBreakFragments(dt) {
   game.breakFragments = game.breakFragments.filter((fragment) => fragment.age < fragment.lifetime);
 }
 
+function updateMovingPlatforms(dt) {
+  for (const platform of game.platforms) {
+    if (!platform.movement) continue;
+
+    platform.x += platform.movement.vx * dt;
+    if (platform.x <= platform.movement.minX) {
+      platform.x = platform.movement.minX;
+      platform.movement.vx = Math.abs(platform.movement.vx);
+    } else if (platform.x >= platform.movement.maxX) {
+      platform.x = platform.movement.maxX;
+      platform.movement.vx = -Math.abs(platform.movement.vx);
+    }
+  }
+}
+
 function updateCameraAndScore() {
   const cameraTrigger = game.cameraY + worldHeight * config.cameraLiftRatio;
   if (game.player.y < cameraTrigger) {
@@ -544,6 +593,7 @@ function update(dt) {
 
   const player = game.player;
   const previousBottom = player.y + config.playerHeight;
+  updateMovingPlatforms(dt);
 
   player.vx = 0;
   if (input.left) player.vx -= config.moveSpeed;
@@ -743,7 +793,7 @@ function draw() {
     game.player.x = config.worldWidth / 2 - config.playerWidth / 2;
     game.player.y = previewY - config.playerHeight;
     game.cameraY = 0;
-    drawPlatform(createPlatform(config.worldWidth / 2 - config.platformWidth / 2, previewY));
+    drawPlatform(createPlatform(config.worldWidth / 2 - config.platformWidth / 2, previewY, config.platformWidth, 'normal'));
     drawPlayer();
     return;
   }
