@@ -28,19 +28,13 @@ The public demo is deployed with GitHub Pages:
 - Build command: `npm run build`
 - Output directory: `dist`
 
-To avoid uploading large image assets to GitHub, the GitHub Pages version keeps code in GitHub and loads runtime images from the public TOS bucket:
+To avoid uploading large image assets to GitHub, the GitHub Pages version keeps code in GitHub and loads runtime images from an external asset host.
 
-```text
-https://meowgame.tos-cn-beijing.volces.com/
-```
-
-This keeps the repository light and makes deployment faster. The tradeoff is that the TOS bucket must keep public read access for the runtime image paths used by `src/main.js` and `src/styles.css`.
-
-Do not enable public write access on the TOS bucket. Only public read is needed for the game to load images.
+This keeps the repository light and makes deployment faster. Keep the asset host read-only and avoid publishing storage credentials or bucket details in public documentation.
 
 ## Assets
 
-Local runtime assets live in `public/assets/`, while the deployed GitHub Pages build currently reads the same asset paths from TOS.
+Local runtime assets live in `public/assets/`, while the deployed GitHub Pages build currently reads the same asset paths from the remote asset host.
 
 - `character-idle.png`
 - `character-jump.png`
