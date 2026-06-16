@@ -1,4 +1,4 @@
-import './styles.css';
+﻿import './styles.css';
 
 const canvas = document.querySelector('#gameCanvas');
 const ctx = canvas.getContext('2d');
@@ -15,9 +15,13 @@ const ui = {
   gameOverPanel: document.querySelector('#gameOverPanel'),
   modalBackdrop: document.querySelector('#modalBackdrop'),
   assetError: document.querySelector('#assetError'),
+  hud: document.querySelector('.hud'),
   startButton: document.querySelector('#startButton'),
   restartButton: document.querySelector('#restartButton'),
   pauseButton: document.querySelector('#pauseButton'),
+  bossHealthCard: document.querySelector('#bossHealthCard'),
+  bossHealthFill: document.querySelector('#bossHealthFill'),
+  bossPlayerHealth: document.querySelector('#bossPlayerHealth'),
 };
 
 const assetManifest = {
@@ -42,6 +46,12 @@ const assetManifest = {
   spaceBackground: assetUrl('assets/scenes/space-background.png'),
   spacePlatform: assetUrl('assets/scenes/space-platform-normal.png'),
   spacePlatformFragile: assetUrl('assets/scenes/space-platform-fragile.png'),
+  basketballBossIdle: assetUrl('assets/bosses/basketballBossIdle.png'),
+  basketballBossAttack: assetUrl('assets/bosses/basketballBossAttack.png'),
+  basketballBossProjectile: assetUrl('assets/bosses/basketballBossProjectile.png'),
+  characterBossIdle: assetUrl('assets/bosses/character-boss-idle.png'),
+  characterBossShoot: assetUrl('assets/bosses/character-boss-shoot.png'),
+  basketballBossSuccessBanner: assetUrl('assets/bosses/basketballBossSuccessBanner.png'),
 };
 
 const sceneTimeline = [
@@ -115,6 +125,7 @@ const config = {
   rocketSpawnEveryMeters: 20,
   rocketFirstSpawnMeters: 15,
   rocketSceneTransitionBlockMeters: 15,
+  rocketBossExitBlockMeters: 8,
   rocketBoostMeters: 10,
   rocketBoostSpeed: 1200,
   rocketExitVelocity: -520,
@@ -131,6 +142,41 @@ const config = {
   springHeight: 28,
   startPlatformYRatio: 0.78,
   cameraLiftRatio: 0.42,
+  bossGateMeters: 50,
+  bossGateRadius: 56,
+  bossGateAttractDuration: 1.15,
+  bossGateScreenTriggerRatio: 0.46,
+  bossPlayerWidth: 118,
+  bossPlayerHeight: 133,
+  bossFloorHeight: 28,
+  bossWidth: 188,
+  bossHeight: 141,
+  bossProjectileSize: 42,
+  bossPlayerBulletRadius: 5,
+  bossPlayerSpeed: 360,
+  bossMaxHp: 20,
+  bossPlayerHp: 3,
+  bossPlayerFireInterval: 0.35,
+  bossFireIntervalMin: 1.1,
+  bossFireIntervalMax: 1.4,
+  bossAttackWindupMin: 0.18,
+  bossAttackWindupMax: 0.22,
+  bossProjectileSpeed: 275,
+  bossBulletSpeed: 560,
+  bossPlayerBillWidth: 24,
+  bossPlayerBillHeight: 14,
+  bossInvulnerableDuration: 0.75,
+  bossPlayerShootPoseDuration: 0.14,
+  bossSuccessDuration: 1.6,
+};
+
+const basketballBossConfig = {
+  sceneId: 'basketball',
+  gateMeters: 50,
+  nextSceneMeters: 51,
+  idleAsset: 'basketballBossIdle',
+  attackAsset: 'basketballBossAttack',
+  projectileAsset: 'basketballBossProjectile',
 };
 
 const input = {
@@ -151,6 +197,7 @@ const game = {
   score: 0,
   cameraY: 0,
   highestY: 0,
+  phase: 'jump',
   player: {
     x: 0,
     y: 0,
@@ -162,6 +209,10 @@ const game = {
   platforms: [],
   rocketBuckets: new Set(),
   breakFragments: [],
+  clearedBossGates: new Set(),
+  bossGate: null,
+  bossBattle: null,
+  bossSuccess: null,
   backgroundSceneId: sceneTimeline[0].id,
   backgroundTransition: null,
 };
@@ -222,9 +273,27 @@ function findSceneIndex(meters) {
   return index === -1 ? sceneTimeline.length - 1 : index;
 }
 
+function isBasketballBossCleared() {
+  return game.clearedBossGates.has(basketballBossConfig.gateMeters);
+}
+
+function getBasketballBossGateY() {
+  return -basketballBossConfig.gateMeters * config.meterGridHeight;
+}
+
+function clampMetersForLockedBasketballBoss(meters) {
+  if (!isBasketballBossCleared() && meters >= basketballBossConfig.gateMeters) {
+    return basketballBossConfig.gateMeters - 1;
+  }
+
+  return meters;
+}
+
 function getBackgroundSceneId(meters) {
+  meters = clampMetersForLockedBasketballBoss(meters);
   for (let index = 1; index < sceneTimeline.length; index += 1) {
     const scene = sceneTimeline[index];
+    if (!isBasketballBossCleared() && scene.start === basketballBossConfig.gateMeters) continue;
     if (meters >= scene.start - backgroundFadeLeadMeters && meters < scene.start) {
       return scene.id;
     }
@@ -267,8 +336,10 @@ function getBackgroundLayers(meters) {
 }
 
 function getPlatformSceneId(meters) {
+  meters = clampMetersForLockedBasketballBoss(meters);
   for (let index = 1; index < sceneTimeline.length; index += 1) {
     const scene = sceneTimeline[index];
+    if (!isBasketballBossCleared() && scene.start === basketballBossConfig.gateMeters) continue;
     if (meters >= scene.start - platformPreviewMeters && meters < scene.start) {
       return scene.id;
     }
@@ -311,6 +382,13 @@ function choosePlatformType(y, allowMoving = true) {
 function getRocketBucket(y) {
   const meters = metersFromY(y);
   if (meters < config.rocketFirstSpawnMeters) return null;
+  if (
+    isBasketballBossCleared() &&
+    meters >= basketballBossConfig.nextSceneMeters &&
+    meters < basketballBossConfig.nextSceneMeters + config.rocketBossExitBlockMeters
+  ) {
+    return null;
+  }
 
   const upcomingScene = sceneTimeline.find((scene) => scene.start > meters);
   if (
@@ -446,6 +524,28 @@ function intersects(rectA, rectB) {
   );
 }
 
+function getPlayerBossRect() {
+  const player = game.player;
+  return {
+    x: player.x + config.bossPlayerWidth * 0.18,
+    y: player.y + config.bossPlayerHeight * 0.12,
+    width: config.bossPlayerWidth * 0.64,
+    height: config.bossPlayerHeight * 0.76,
+  };
+}
+
+function getBossRect() {
+  const battle = game.bossBattle;
+  if (!battle) return null;
+
+  return {
+    x: battle.boss.x + config.bossWidth * 0.12,
+    y: battle.boss.y + config.bossHeight * 0.1,
+    width: config.bossWidth * 0.76,
+    height: config.bossHeight * 0.68,
+  };
+}
+
 function startRocketBoost(platform) {
   platform.rocket.collected = true;
   const player = game.player;
@@ -493,6 +593,7 @@ function resetGame() {
   game.score = 0;
   game.cameraY = 0;
   game.highestY = 0;
+  game.phase = 'jump';
   game.player.x = config.worldWidth / 2 - config.playerWidth / 2;
   game.player.y = worldHeight * config.startPlatformYRatio - config.playerHeight;
   game.player.vx = 0;
@@ -501,6 +602,10 @@ function resetGame() {
   game.player.rocketTargetY = null;
   game.rocketBuckets = new Set();
   game.breakFragments = [];
+  game.clearedBossGates = new Set();
+  game.bossGate = null;
+  game.bossBattle = null;
+  game.bossSuccess = null;
   game.backgroundSceneId = sceneTimeline[0].id;
   game.backgroundTransition = null;
   game.platforms = [
@@ -517,6 +622,7 @@ function resetGame() {
   ui.gameOverPanel.classList.remove('is-visible');
   ui.modalBackdrop.classList.remove('is-visible');
   updateScore(0);
+  syncBossHud(null);
 }
 
 function updateScore(score) {
@@ -524,13 +630,40 @@ function updateScore(score) {
   ui.score.textContent = formatMeters(game.score);
 }
 
+function syncBossHud(battle = game.bossBattle) {
+  const visible = state === 'playing' && game.phase === 'boss' && Boolean(battle);
+  ui.hud?.classList.toggle('is-boss', visible);
+  ui.bossHealthCard?.classList.toggle('is-visible', visible);
+  ui.bossPlayerHealth?.classList.toggle('is-visible', visible);
+  if (!visible || !battle) return;
+
+  const hpRatio = Math.max(0, Math.min(1, battle.boss.hp / config.bossMaxHp));
+  if (ui.bossHealthFill) {
+    ui.bossHealthFill.style.transform = `scaleX(${hpRatio})`;
+  }
+
+  if (ui.bossPlayerHealth && ui.bossPlayerHealth.dataset.hp !== String(battle.playerHp)) {
+    ui.bossPlayerHealth.dataset.hp = String(battle.playerHp);
+    ui.bossPlayerHealth.replaceChildren();
+    for (let index = 0; index < config.bossPlayerHp; index += 1) {
+      const heart = document.createElement('span');
+      heart.textContent = '♥';
+      if (index >= battle.playerHp) heart.classList.add('is-empty');
+      ui.bossPlayerHealth.append(heart);
+    }
+  }
+}
+
 function endGame() {
   state = 'gameOver';
+  syncBossHud(null);
   bestScore = Math.max(bestScore, game.score);
   localStorage.setItem('meow-jump-best', bestScore.toString());
   ui.best.textContent = formatMeters(bestScore);
   ui.finalScore.textContent = formatMeters(game.score);
-  const result = getSceneResult(game.score);
+  const resultScore =
+    game.phase === 'gate' || game.phase === 'boss' ? basketballBossConfig.gateMeters - 1 : game.score;
+  const result = getSceneResult(resultScore);
   ui.finalRegion.textContent = result.name;
   ui.finalPraise.textContent = result.praise;
   ui.modalBackdrop.classList.add('is-visible');
@@ -585,11 +718,285 @@ function updateCameraAndScore() {
   }
 
   game.highestY = Math.min(game.highestY, game.cameraY);
-  updateScore(metersFromY(game.highestY));
+  updateScore(Math.min(metersFromY(game.highestY), isBasketballBossCleared() ? Infinity : basketballBossConfig.gateMeters));
+}
+
+function shouldStartBasketballBossGate() {
+  const gateScreenY = getBasketballBossGateY() - game.cameraY;
+  return (
+    game.phase === 'jump' &&
+    !isBasketballBossCleared() &&
+    gateScreenY >= worldHeight * config.bossGateScreenTriggerRatio
+  );
+}
+
+function startBossGate() {
+  game.phase = 'gate';
+  game.player.mode = 'normal';
+  game.player.rocketTargetY = null;
+  game.player.vy = Math.min(game.player.vy, -160);
+  game.bossGate = {
+    config: basketballBossConfig,
+    age: 0,
+    x: config.worldWidth / 2,
+    y: getBasketballBossGateY(),
+    radius: config.bossGateRadius,
+  };
+  vibrate([18, 32, 18]);
+}
+
+function startBossBattle() {
+  const gateConfig = game.bossGate?.config || basketballBossConfig;
+  game.phase = 'boss';
+  game.bossGate = null;
+  game.breakFragments = [];
+  game.player.mode = 'boss';
+  game.player.rocketTargetY = null;
+  game.player.x = config.worldWidth / 2 - config.bossPlayerWidth / 2;
+  game.player.y = worldHeight - config.bossPlayerHeight - 34;
+  game.player.vx = 0;
+  game.player.vy = 0;
+  game.bossBattle = {
+    config: gateConfig,
+    boss: {
+      x: config.worldWidth / 2 - config.bossWidth / 2,
+      y: 70,
+      vx: 82,
+      hp: config.bossMaxHp,
+      state: 'idle',
+      attackTimer: 0,
+      fireTimer: randomBetween(config.bossFireIntervalMin, config.bossFireIntervalMax),
+    },
+    playerHp: config.bossPlayerHp,
+    playerInvulnerable: 0,
+    playerFireTimer: 0.12,
+    playerShootPose: 0,
+    playerFacing: 1,
+    playerBullets: [],
+    bossProjectiles: [],
+    elapsed: 0,
+  };
+}
+
+function finishBossBattle() {
+  const gateMeters = game.bossBattle?.config.gateMeters || basketballBossConfig.gateMeters;
+  const nextSceneMeters = game.bossBattle?.config.nextSceneMeters || basketballBossConfig.nextSceneMeters;
+  game.clearedBossGates.add(gateMeters);
+  game.phase = 'success';
+  game.bossBattle = null;
+  game.bossSuccess = {
+    age: 0,
+    nextSceneMeters,
+  };
+  game.player.mode = 'normal';
+  game.player.vx = 0;
+  game.player.vy = 0;
+  vibrate([24, 36, 24]);
+}
+
+function resumeAfterBossSuccess() {
+  const nextSceneMeters = game.bossSuccess?.nextSceneMeters || basketballBossConfig.nextSceneMeters;
+  const resumePlatformY = -nextSceneMeters * config.meterGridHeight + 38;
+
+  game.phase = 'jump';
+  game.bossSuccess = null;
+  game.player.mode = 'normal';
+  game.player.x = config.worldWidth / 2 - config.playerWidth / 2;
+  game.player.y = resumePlatformY - config.playerHeight;
+  game.player.vx = 0;
+  game.player.vy = config.jumpVelocity;
+  game.player.rocketTargetY = null;
+  game.cameraY = game.player.y - worldHeight * config.cameraLiftRatio;
+  game.highestY = Math.min(game.highestY, -nextSceneMeters * config.meterGridHeight);
+  updateScore(nextSceneMeters);
+  game.backgroundSceneId = 'candy';
+  game.backgroundTransition = null;
+  game.rocketBuckets = new Set();
+  const resumePlatform = createPlatform(config.worldWidth / 2 - config.platformWidth / 2, resumePlatformY, config.platformWidth, 'normal');
+  resumePlatform.rocket = null;
+  resumePlatform.spring = null;
+  game.platforms = [resumePlatform];
+
+  let y = resumePlatformY - randomBetween(config.platformGapMin, config.platformGapMax);
+  while (y > game.cameraY - worldHeight * 1.1) {
+    game.platforms.push(...createPlatformRow(y, 18));
+    y -= randomBetween(config.platformGapMin, config.platformGapMax);
+  }
+}
+
+function updateBossGate(dt) {
+  const gate = game.bossGate;
+  if (!gate) return;
+
+  gate.age += dt;
+  const player = game.player;
+  const playerCenterX = player.x + config.playerWidth / 2;
+  const playerCenterY = player.y + config.playerHeight / 2;
+  const dx = gate.x - playerCenterX;
+  const dy = gate.y - playerCenterY;
+  const distance = Math.hypot(dx, dy) || 1;
+  const pull = Math.min(1, gate.age / config.bossGateAttractDuration);
+
+  player.vx = dx * (1.6 + pull * 2.2);
+  player.vy = dy * (1.6 + pull * 2.2);
+  player.x += player.vx * dt;
+  player.y += player.vy * dt;
+
+  if (player.x < -config.playerWidth) player.x = config.worldWidth;
+  if (player.x > config.worldWidth) player.x = -config.playerWidth;
+
+  if (distance < gate.radius * 0.72 || gate.age >= config.bossGateAttractDuration) {
+    startBossBattle();
+  }
+}
+
+function updateBossBattle(dt) {
+  const battle = game.bossBattle;
+  if (!battle) return;
+
+  battle.elapsed += dt;
+  battle.playerInvulnerable = Math.max(0, battle.playerInvulnerable - dt);
+  battle.playerShootPose = Math.max(0, battle.playerShootPose - dt);
+
+  const player = game.player;
+  player.vx = 0;
+  if (input.left) player.vx -= config.bossPlayerSpeed;
+  if (input.right) player.vx += config.bossPlayerSpeed;
+  if (player.vx < 0) battle.playerFacing = -1;
+  if (player.vx > 0) battle.playerFacing = 1;
+  player.x = Math.max(10, Math.min(config.worldWidth - config.bossPlayerWidth - 10, player.x + player.vx * dt));
+  player.y = worldHeight - config.bossPlayerHeight - 34;
+
+  battle.playerFireTimer -= dt;
+  if (battle.playerFireTimer <= 0) {
+    battle.playerFireTimer += config.bossPlayerFireInterval;
+    battle.playerShootPose = config.bossPlayerShootPoseDuration;
+    battle.playerBullets.push({
+      x: player.x + config.bossPlayerWidth / 2 + battle.playerFacing * config.bossPlayerWidth * 0.37,
+      y: player.y + 47,
+      vy: -config.bossBulletSpeed,
+      radius: config.bossPlayerBulletRadius,
+      age: 0,
+    });
+  }
+
+  const boss = battle.boss;
+  boss.x += boss.vx * dt;
+  const bossMinX = 12;
+  const bossMaxX = config.worldWidth - config.bossWidth - 12;
+  if (boss.x <= bossMinX) {
+    boss.x = bossMinX;
+    boss.vx = Math.abs(boss.vx);
+  } else if (boss.x >= bossMaxX) {
+    boss.x = bossMaxX;
+    boss.vx = -Math.abs(boss.vx);
+  }
+
+  boss.fireTimer -= dt;
+  if (boss.state === 'idle' && boss.fireTimer <= 0) {
+    boss.state = 'attack';
+    boss.attackTimer = randomBetween(config.bossAttackWindupMin, config.bossAttackWindupMax);
+  }
+
+  if (boss.state === 'attack') {
+    boss.attackTimer -= dt;
+    if (boss.attackTimer <= 0) {
+      battle.bossProjectiles.push({
+        x: boss.x + config.bossWidth * 0.38,
+        y: boss.y + config.bossHeight * 0.68,
+        vx: randomBetween(-24, 24),
+        vy: config.bossProjectileSpeed,
+        size: config.bossProjectileSize,
+        age: 0,
+      });
+      boss.state = 'idle';
+      boss.fireTimer = randomBetween(config.bossFireIntervalMin, config.bossFireIntervalMax);
+    }
+  }
+
+  for (const bullet of battle.playerBullets) {
+    bullet.age += dt;
+    bullet.y += bullet.vy * dt;
+  }
+  battle.playerBullets = battle.playerBullets.filter((bullet) => bullet.y + bullet.radius > -20);
+
+  const bossRect = getBossRect();
+  if (bossRect) {
+    for (const bullet of battle.playerBullets) {
+      const bulletRect = {
+        x: bullet.x - bullet.radius,
+        y: bullet.y - bullet.radius,
+        width: bullet.radius * 2,
+        height: bullet.radius * 2,
+      };
+      if (!bullet.hit && intersects(bulletRect, bossRect)) {
+        bullet.hit = true;
+        boss.hp -= 1;
+      }
+    }
+  }
+  battle.playerBullets = battle.playerBullets.filter((bullet) => !bullet.hit);
+
+  for (const projectile of battle.bossProjectiles) {
+    projectile.age += dt;
+    projectile.x += projectile.vx * dt;
+    projectile.y += projectile.vy * dt;
+  }
+  battle.bossProjectiles = battle.bossProjectiles.filter((projectile) => projectile.y < worldHeight + projectile.size);
+
+  const playerRect = getPlayerBossRect();
+  for (const projectile of battle.bossProjectiles) {
+    const projectileRect = {
+      x: projectile.x - projectile.size / 2,
+      y: projectile.y - projectile.size / 2,
+      width: projectile.size,
+      height: projectile.size,
+    };
+
+    if (!projectile.hit && battle.playerInvulnerable <= 0 && intersects(projectileRect, playerRect)) {
+      projectile.hit = true;
+      battle.playerHp -= 1;
+      battle.playerInvulnerable = config.bossInvulnerableDuration;
+      vibrate([18, 24, 18]);
+      if (battle.playerHp <= 0) {
+        endGame();
+        return;
+      }
+    }
+  }
+  battle.bossProjectiles = battle.bossProjectiles.filter((projectile) => !projectile.hit);
+
+  if (boss.hp <= 0) {
+    finishBossBattle();
+  }
+}
+
+function updateBossSuccess(dt) {
+  if (!game.bossSuccess) return;
+
+  game.bossSuccess.age += dt;
+  if (game.bossSuccess.age >= config.bossSuccessDuration) {
+    resumeAfterBossSuccess();
+  }
 }
 
 function update(dt) {
   if (state !== 'playing' || paused) return;
+
+  if (game.phase === 'gate') {
+    updateBossGate(dt);
+    return;
+  }
+
+  if (game.phase === 'boss') {
+    updateBossBattle(dt);
+    return;
+  }
+
+  if (game.phase === 'success') {
+    updateBossSuccess(dt);
+    return;
+  }
 
   const player = game.player;
   const previousBottom = player.y + config.playerHeight;
@@ -649,6 +1056,10 @@ function update(dt) {
   }
 
   updateCameraAndScore();
+  if (shouldStartBasketballBossGate()) {
+    startBossGate();
+    return;
+  }
   ensurePlatforms();
   updateBreakFragments(dt);
 
@@ -695,10 +1106,10 @@ function drawCoverImage(img, x, y, width, height) {
   ctx.drawImage(img, sx, sy, sw, sh, x, y, width, height);
 }
 
-function drawBackground() {
+function drawBackground(meters = game.score) {
   const width = canvas.clientWidth;
   const height = canvas.clientHeight;
-  const layers = getBackgroundLayers(game.score);
+  const layers = getBackgroundLayers(meters);
 
   for (const layer of layers) {
     ctx.save();
@@ -784,9 +1195,256 @@ function drawPlayer() {
   ctx.drawImage(sprite, toScreenX(player.x), toScreenY(player.y), drawWidth, drawHeight);
 }
 
+function getVisibleBasketballBossGate() {
+  if (isBasketballBossCleared()) return null;
+  const y = getBasketballBossGateY();
+  const screenY = toScreenY(y);
+  const radius = config.bossGateRadius * scale;
+
+  if (screenY < -radius * 2 || screenY > canvas.clientHeight + radius * 2) return null;
+
+  return {
+    x: config.worldWidth / 2,
+    y,
+    radius: config.bossGateRadius,
+  };
+}
+
+function drawBossGate(gate = game.bossGate || getVisibleBasketballBossGate()) {
+  if (!gate) return;
+
+  const screenX = toScreenX(gate.x);
+  const screenY = toScreenY(gate.y);
+  const pulse = Math.sin(performance.now() / 130) * 0.08 + 1;
+  const radius = gate.radius * scale * pulse;
+  const swirl = performance.now() / 520;
+
+  ctx.save();
+  ctx.translate(screenX, screenY);
+  ctx.rotate(swirl);
+
+  const glow = ctx.createRadialGradient(0, 0, radius * 0.2, 0, 0, radius * 1.55);
+  glow.addColorStop(0, 'rgba(10, 7, 26, 0.98)');
+  glow.addColorStop(0.42, 'rgba(32, 17, 67, 0.92)');
+  glow.addColorStop(0.72, 'rgba(91, 65, 171, 0.42)');
+  glow.addColorStop(1, 'rgba(91, 65, 171, 0)');
+  ctx.fillStyle = glow;
+  ctx.beginPath();
+  ctx.arc(0, 0, radius * 1.55, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.lineWidth = 5 * scale;
+  ctx.strokeStyle = 'rgba(189, 166, 255, 0.76)';
+  for (let index = 0; index < 3; index += 1) {
+    ctx.beginPath();
+    ctx.ellipse(0, 0, radius * (0.95 + index * 0.18), radius * (0.48 + index * 0.08), index * 0.82, 0, Math.PI * 1.45);
+    ctx.stroke();
+  }
+
+  ctx.fillStyle = '#05020d';
+  ctx.beginPath();
+  ctx.arc(0, 0, radius * 0.52, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawBossPlayer() {
+  const battle = game.bossBattle;
+  const player = game.player;
+  if (battle?.playerInvulnerable > 0 && Math.floor(performance.now() / 90) % 2 === 0) return;
+
+  const isShooting = (battle?.playerShootPose || 0) > 0;
+  const sprite = isShooting ? assets.characterBossShoot : assets.characterBossIdle;
+  const drawWidth = config.bossPlayerWidth * scale;
+  const drawHeight = config.bossPlayerHeight * scale;
+  const drawX = (player.x + config.bossPlayerWidth / 2) * scale - drawWidth / 2;
+  const drawY = (player.y + config.bossPlayerHeight) * scale - drawHeight;
+
+  if (battle?.playerFacing < 0) {
+    ctx.save();
+    ctx.translate(drawX + drawWidth / 2, drawY + drawHeight / 2);
+    ctx.scale(-1, 1);
+    ctx.drawImage(sprite, -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight);
+    ctx.restore();
+  } else {
+    ctx.drawImage(
+      sprite,
+      drawX,
+      drawY,
+      drawWidth,
+      drawHeight,
+    );
+  }
+
+  if (isShooting) {
+    const facing = battle?.playerFacing || 1;
+    const muzzleX = (player.x + config.bossPlayerWidth / 2 + facing * config.bossPlayerWidth * 0.37) * scale;
+    const muzzleY = (player.y + 47) * scale;
+    const flashRadius = (9 + Math.sin(performance.now() / 30) * 2) * scale;
+    const flash = ctx.createRadialGradient(muzzleX, muzzleY, 1, muzzleX, muzzleY, flashRadius);
+    flash.addColorStop(0, 'rgba(255, 255, 255, 0.95)');
+    flash.addColorStop(0.45, 'rgba(133, 231, 255, 0.78)');
+    flash.addColorStop(1, 'rgba(133, 231, 255, 0)');
+    ctx.fillStyle = flash;
+    ctx.beginPath();
+    ctx.arc(muzzleX, muzzleY, flashRadius, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function drawBossFloor() {
+  const floorY = (worldHeight - 42) * scale;
+  const floorHeight = config.bossFloorHeight * scale;
+  const floorX = -8 * scale;
+  const floorWidth = (config.worldWidth + 16) * scale;
+
+  ctx.save();
+  ctx.fillStyle = 'rgba(255, 248, 232, 0.92)';
+  ctx.strokeStyle = 'rgba(238, 142, 56, 0.82)';
+  ctx.lineWidth = 3 * scale;
+  roundedRectPath(floorX, floorY, floorWidth, floorHeight, 14 * scale);
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
+  ctx.lineWidth = 2 * scale;
+  ctx.beginPath();
+  ctx.moveTo(10 * scale, floorY + 8 * scale);
+  ctx.lineTo((config.worldWidth - 10) * scale, floorY + 5 * scale);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function roundedRectPath(x, y, width, height, radius) {
+  const corner = Math.min(radius, width / 2, height / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + corner, y);
+  ctx.lineTo(x + width - corner, y);
+  ctx.quadraticCurveTo(x + width, y, x + width, y + corner);
+  ctx.lineTo(x + width, y + height - corner);
+  ctx.quadraticCurveTo(x + width, y + height, x + width - corner, y + height);
+  ctx.lineTo(x + corner, y + height);
+  ctx.quadraticCurveTo(x, y + height, x, y + height - corner);
+  ctx.lineTo(x, y + corner);
+  ctx.quadraticCurveTo(x, y, x + corner, y);
+  ctx.closePath();
+}
+
+function drawPlayerBillBullet(bullet) {
+  const width = config.bossPlayerBillWidth * scale;
+  const height = config.bossPlayerBillHeight * scale;
+  const flutter = Math.sin((bullet.age || 0) * 18) * 0.08;
+
+  ctx.save();
+  ctx.translate(bullet.x * scale, bullet.y * scale);
+  ctx.rotate(-0.26 + flutter);
+  ctx.fillStyle = '#ff8fc6';
+  ctx.strokeStyle = '#8d315f';
+  ctx.lineWidth = Math.max(1.5, 2 * scale);
+  roundedRectPath(-width / 2, -height / 2, width, height, 4 * scale);
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.fillStyle = '#ffd5e8';
+  roundedRectPath(-width * 0.23, -height * 0.24, width * 0.46, height * 0.48, 3 * scale);
+  ctx.fill();
+
+  ctx.fillStyle = '#ff5ea9';
+  ctx.beginPath();
+  ctx.arc(0, 0, height * 0.16, 0, Math.PI * 2);
+  ctx.fill();
+  for (let index = 0; index < 4; index += 1) {
+    const angle = -Math.PI / 2 + index * (Math.PI / 2);
+    ctx.beginPath();
+    ctx.arc(Math.cos(angle) * height * 0.18, Math.sin(angle) * height * 0.16, height * 0.11, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.restore();
+}
+
+function drawBossBattle() {
+  const battle = game.bossBattle;
+  if (!battle) return;
+  syncBossHud(battle);
+
+  const width = canvas.clientWidth;
+  const height = canvas.clientHeight;
+  const boss = battle.boss;
+  const bossSprite = assets[boss.state === 'attack' ? battle.config.attackAsset : battle.config.idleAsset];
+
+  const overlay = ctx.createLinearGradient(0, 0, 0, height);
+  overlay.addColorStop(0, 'rgba(255, 255, 255, 0.16)');
+  overlay.addColorStop(0.52, 'rgba(255, 255, 255, 0)');
+  overlay.addColorStop(1, 'rgba(255, 248, 214, 0.16)');
+  ctx.fillStyle = overlay;
+  ctx.fillRect(0, 0, width, height);
+
+  const floatOffset = Math.sin(performance.now() / 260) * 4 * scale;
+  ctx.drawImage(
+    bossSprite,
+    boss.x * scale,
+    boss.y * scale + floatOffset,
+    config.bossWidth * scale,
+    config.bossHeight * scale,
+  );
+
+  for (const bullet of battle.playerBullets) {
+    drawPlayerBillBullet(bullet);
+  }
+
+  for (const projectile of battle.bossProjectiles) {
+    const wobble = Math.sin(projectile.age * 11) * 0.06;
+    const size = projectile.size * scale * (1 + Math.min(0.18, projectile.age * 0.8));
+    ctx.save();
+    ctx.translate(projectile.x * scale, projectile.y * scale);
+    ctx.rotate(projectile.age * 4 + wobble);
+    ctx.drawImage(assets[battle.config.projectileAsset], -size / 2, -size / 2, size, size);
+    ctx.restore();
+  }
+
+  drawBossFloor();
+  drawBossPlayer();
+}
+
+function drawBossBattleSuccess() {
+  const width = canvas.clientWidth;
+  const height = canvas.clientHeight;
+  const img = assets.basketballBossSuccessBanner;
+  const imageRatio = img.width / img.height;
+  const maxWidth = width * 0.96;
+  const maxHeight = height * 0.32;
+  let drawWidth = maxWidth;
+  let drawHeight = drawWidth / imageRatio;
+
+  if (drawHeight > maxHeight) {
+    drawHeight = maxHeight;
+    drawWidth = drawHeight * imageRatio;
+  }
+
+  const progress = game.bossSuccess
+    ? Math.min(1, game.bossSuccess.age / 0.32)
+    : 1;
+  const eased = 1 - Math.pow(1 - progress, 3);
+  const y = height * 0.34 - drawHeight / 2 - (1 - eased) * 34 * scale;
+  const pop = 0.9 + eased * 0.1;
+
+  ctx.save();
+  ctx.fillStyle = `rgba(20, 31, 52, ${0.18 * eased})`;
+  ctx.fillRect(0, 0, width, height);
+  ctx.translate(width / 2, y + drawHeight / 2);
+  ctx.scale(pop, pop);
+  ctx.drawImage(img, -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight);
+  ctx.restore();
+}
+
 function draw() {
   ctx.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
-  drawBackground();
+  if (game.phase !== 'boss') {
+    syncBossHud(null);
+  }
+  const lockedBasketballMeters = basketballBossConfig.gateMeters - 1;
+  drawBackground(game.phase === 'gate' || game.phase === 'boss' || game.phase === 'success' ? lockedBasketballMeters : game.score);
 
   if (state === 'ready') {
     const previewY = worldHeight * 0.58;
@@ -795,6 +1453,16 @@ function draw() {
     game.cameraY = 0;
     drawPlatform(createPlatform(config.worldWidth / 2 - config.platformWidth / 2, previewY, config.platformWidth, 'normal'));
     drawPlayer();
+    return;
+  }
+
+  if (game.phase === 'boss') {
+    drawBossBattle();
+    return;
+  }
+
+  if (game.phase === 'success') {
+    drawBossBattleSuccess();
     return;
   }
 
@@ -808,6 +1476,7 @@ function draw() {
     drawSpringPowerup(platform);
     drawRocketPowerup(platform);
   }
+  drawBossGate();
   drawPlayer();
 }
 
